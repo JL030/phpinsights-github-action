@@ -1,0 +1,41 @@
+name: PHP Composer
+
+on: [pull_request]
+
+jobs:
+  phpinsights:
+    runs-on: ubuntu-latest
+    name: PHP Insights checks
+    steps:
+      - name: Instalar jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install jq
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # important!
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.1
+      - name: Curl
+        id: curl
+        run: |
+          response=$(curl -s -X GET "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${{ github.event.pull_request.number }}/files" -H "Authorization: Bearer $GITHUB_TOKEN")
+          files=$(echo "$response" | jq -r '.[] | select(.status == "added" or .status == "modified") | select(.filename | endswith(".php")) | .filename')
+          files_list=($files)
+          files=$(IFS=' '; echo "${files_list[*]}")
+          echo "::set-output name=filtered_files::$files"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install PHP Insights
+        run: |
+          curl -OL https://getcomposer.org/download/latest-2.x/composer.phar
+          php composer.phar global config --no-plugins allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
+          php composer.phar global require nunomaduro/phpinsights
+          php composer.phar clearcache -q
+          php ~/.composer/vendor/bin/phpinsights --version
+      - name: Run PHP Insights
+        if: github.event_name == 'pull_request'
+        run: |
+          files="${{ steps.curl.outputs.filtered_files }}"
+          php ~/.composer/vendor/bin/phpinsights analyse $files --ansi -v --no-interaction --format=github-action --min-quality=90 --min-complexity=90 --min-architecture=90 --min-style=95
