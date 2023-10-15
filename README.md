@@ -1,0 +1,1 @@
+# phpinsights-github-action
